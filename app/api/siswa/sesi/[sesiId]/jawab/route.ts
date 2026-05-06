@@ -7,8 +7,9 @@ export async function POST(req: NextRequest, { params }: { params: { sesiId: str
   const soal = await prisma.soal.findUnique({ where: { id: soalId } });
   if (!soal) return NextResponse.json({ message: "Soal tidak ditemukan" }, { status: 404 });
 
+  // Normalisasi: trim + uppercase untuk jawaban huruf
   const isBenar = soal.tipe === "PILIHAN_GANDA"
-    ? soal.jawabanBenar === jawaban
+    ? soal.jawabanBenar?.trim().toUpperCase() === jawaban?.trim().toUpperCase()
     : false;
 
   await prisma.jawabanSiswa.upsert({
