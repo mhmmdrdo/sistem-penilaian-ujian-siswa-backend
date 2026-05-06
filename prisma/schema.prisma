@@ -1,753 +1,220 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-1.0.x"]
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
+  provider  = "mysql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// =====================================================================
-// ENUM
-// =====================================================================
-
-// Siswa adalah guest, tidak punya akun — role hanya admin & guru
 enum Role {
-  admin
-  guru
+  ADMIN
+  GURU
 }
-
-enum QuestionType {
-  multiple_choice
-  true_false
-  essay
-}
-
-enum CognitiveLevel {
-  C1
-  C2
-  C3
-  C4
-  C5
-  C6
-}
-
-enum Difficulty {
-  mudah
-  sedang
-  sulit
-}
-
-// Dipakai oleh exam_sessions, quiz_sessions, daily_test_sessions
-enum SessionStatus {
-  in_progress
-  submitted
-  auto_submitted
-  violation_ended
-}
-
-// Level anti-cheat untuk Quiz
-enum AntiCheatLevel {
-  none
-  light
-  strict
-}
-
-// Kategori DailyTest
-enum DailyTestCategory {
-  ulangan_harian
-  uts
-  uas
-  sumatif
-  formatif
-}
-
-// Enum session_type untuk student_answers (polymorphic)
-enum SessionType {
-  exam
-  practice
-  quiz
-  daily_test
-}
-
-// Enum untuk tipe pelanggaran
-enum ViolationType {
-  tab_switch
-  window_blur
-  fullscreen_exit
-  devtools_open
-  print_screen
-  copy_attempt
-  context_menu
-}
-
-// Enum session_type untuk violations
-enum ViolationSessionType {
-  exam
-  quiz
-  daily_test
-}
-
-// Enum untuk display mode latihan
-enum DisplayMode {
-  all
-  one_by_one
-}
-
-// =====================================================================
-// USER
-// =====================================================================
 
 model User {
-  id           String    @id @default(uuid())
-  name         String
-  email        String    @unique
-  passwordHash String
-  role         Role
-  nip          String?
-
+  id          String    @id @default(cuid())
+  name        String
+  email       String    @unique
+  password    String
+  role        Role      @default(GURU)
+  nip         String?
   namaSekolah String?
-  logoSekolah String?
-
   isActive    Boolean   @default(true)
   avatarUrl   String?
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  // Relasi
-  teacherSubjects TeacherSubject[]
-  exams           Exam[]
-  practiceSets    PracticeSet[]
-  quizzes         Quiz[]
-  dailyTests      DailyTest[]
-  questions       Question[]
-  kisiKisiList    KisiKisi[]
-  cardSets        CardSet[]
-  questionCards   QuestionCard[]
+  mataPelajaran MataPelajaran[]
+  soal          Soal[]
+  ujian         Ujian[]
+  konfigNilai   KonfigNilai[]
 
-  // FIX: Tambah relasi ke GradeConfig & FinalGrade
-  gradeConfigs GradeConfig[]
-  finalGrades  FinalGrade[]
+  @@map("users")
 }
 
-// =====================================================================
-// SUBJECT
-// =====================================================================
-
-model Subject {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  code        String?  @unique
-  jenjang     String   @default("Umum")
-  description String?
-  isActive    Boolean  @default(true)
-  createdBy   String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  teacherSubjects TeacherSubject[]
-  questions       Question[]
-  exams           Exam[]
-  practiceSets    PracticeSet[]
-  quizzes         Quiz[]
-  dailyTests      DailyTest[]
-
-  // FIX: KisiKisi — relasi nama "subject" bukan "creator"
-  kisiKisiList KisiKisi[]
-
-  // FIX: QuestionCard — relasi nama "subject" bukan "creator"
-  questionCards QuestionCard[]
-
-  // FIX: Tambah relasi ke GradeConfig & FinalGrade
-  gradeConfigs GradeConfig[]
-  finalGrades  FinalGrade[]
-}
-
-// =====================================================================
-// TEACHER SUBJECT (pivot guru <-> mata pelajaran)
-// =====================================================================
-
-model TeacherSubject {
-  id        String   @id @default(uuid())
-  userId    String
-  subjectId String
-  createdAt DateTime @default(now())
-
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, subjectId])
-}
-
-// =====================================================================
-// QUESTION (Bank Soal)
-// =====================================================================
-
-model Question {
-  id              String         @id @default(uuid())
-  createdBy       String
-  questionType    QuestionType
-  content         String         @db.Text
-  explanation     String?        @db.Text
-  subjectId       String
-  kelas           String
-  kompetensiDasar String?        @db.Text
-  indikator       String?        @db.Text
-  cognitiveLevel  CognitiveLevel
-  difficulty      Difficulty
-  tags            String?        @db.Text // JSON array string
-  imageUrl        String?        @db.Text
-  isActive        Boolean        @default(true)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-
-  subject Subject @relation(fields: [subjectId], references: [id])
-  creator User    @relation(fields: [createdBy], references: [id])
-
-  options QuestionOption[]
-
-  examQuestions      ExamQuestion[]
-  practiceQuestions  PracticeQuestion[]
-  quizQuestions      QuizQuestion[]
-  dailyTestQuestions DailyTestQuestion[]
-
-  studentAnswers StudentAnswer[]
-}
-
-// =====================================================================
-// QUESTION OPTION (Opsi jawaban pilihan ganda)
-// =====================================================================
-
-model QuestionOption {
-  id         String   @id @default(uuid())
-  questionId String
-  label      String   // "A", "B", "C", "D", "E"
-  content    String   @db.Text
-  isCorrect  Boolean  @default(false)
-  orderIndex Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
-  selectedInAnswers StudentAnswer[]
-}
-
-// =====================================================================
-// EXAM (Ujian Formal)
-// =====================================================================
-
-model Exam {
-  id                 String    @id @default(uuid())
-  examCode           String    @unique
-  createdBy          String
-  title              String
-  subjectId          String
-  kelas              String
-  instructions       String?   @db.Text
-  durationMinutes    Int
-  startTime          DateTime?
-  endTime            DateTime?
-  accessToken        String
-  isActive           Boolean   @default(true)
-  randomizeQuestions Boolean   @default(false)
-  randomizeOptions   Boolean   @default(false)
-  showResult         Boolean   @default(true)
-  maxViolations      Int       @default(3)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-
-  subject   Subject        @relation(fields: [subjectId], references: [id])
-  creator   User           @relation(fields: [createdBy], references: [id])
-  questions ExamQuestion[]
-  sessions  ExamSession[]
-    examWeights ExamWeight[]
-
-}
-
-// =====================================================================
-// PRACTICE SET (Latihan)
-// =====================================================================
-
-model PracticeSet {
-  id                 String      @id @default(uuid())
-  practiceCode       String      @unique
-  createdBy          String
-  title              String
-  subjectId          String
-  kelas              String
-  description        String?     @db.Text
-  accessToken        String?     // nullable = publik
-  isActive           Boolean     @default(true)
-  showExplanation    Boolean     @default(true)
-  showResult         Boolean     @default(true)
-  randomizeQuestions Boolean     @default(false)
-  randomizeOptions   Boolean     @default(false)
-  displayMode        DisplayMode @default(all)
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
-
-  subject   Subject            @relation(fields: [subjectId], references: [id])
-  creator   User               @relation(fields: [createdBy], references: [id])
-  questions PracticeQuestion[]
-  sessions  PracticeSession[]
-}
-
-// =====================================================================
-// QUIZ (Kuis)
-// =====================================================================
-
-model Quiz {
-  id                    String         @id @default(uuid())
-  quizCode              String         @unique
-  createdBy             String
-  title                 String
-  subjectId             String
-  kelas                 String
-  instructions          String?        @db.Text
-  durationMinutes       Int?           // nullable = tanpa batas
-  accessToken           String
-  isActive              Boolean        @default(true)
-  showResultImmediately Boolean        @default(true)
-  randomizeQuestions    Boolean        @default(false)
-  randomizeOptions      Boolean        @default(false)
-  antiCheatLevel        AntiCheatLevel @default(light)
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
-
-  subject   Subject        @relation(fields: [subjectId], references: [id])
-  creator   User           @relation(fields: [createdBy], references: [id])
-  questions QuizQuestion[]
-  sessions  QuizSession[]
-}
-
-// =====================================================================
-// DAILY TEST (Ulangan)
-// =====================================================================
-
-model DailyTest {
-  id                 String            @id @default(uuid())
-  testCode           String            @unique
-  createdBy          String
-  title              String
-  category           DailyTestCategory
-  subjectId          String
-  kelas              String
-  semester           String            // "1" atau "2"
-  tahunAjaran        String            // contoh: "2025/2026"
-  instructions       String?           @db.Text
-  durationMinutes    Int
-  startTime          DateTime?
-  endTime            DateTime?
-  accessToken        String
-  kkm                Int               @default(75)
-  isActive           Boolean           @default(true)
-  randomizeQuestions Boolean           @default(false)
-  randomizeOptions   Boolean           @default(false)
-  maxViolations      Int               @default(3)
-  showResult         Boolean           @default(true)
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-
-  subject   Subject             @relation(fields: [subjectId], references: [id])
-  creator   User                @relation(fields: [createdBy], references: [id])
-  questions DailyTestQuestion[]
-  sessions  DailyTestSession[]
-}
-
-// =====================================================================
-// TABEL PIVOT Soal per Assessment
-// =====================================================================
-
-model ExamQuestion {
-  id         String  @id @default(uuid())
-  examId     String
-  questionId String
-  orderIndex Int     @default(0)
-  points     Decimal @default(1) @db.Decimal(5, 2)
-
-  exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
-  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
-  @@unique([examId, questionId])
-}
-
-model PracticeQuestion {
-  id         String @id @default(uuid())
-  practiceId String
-  questionId String
-  orderIndex Int    @default(0)
-
-  practice PracticeSet @relation(fields: [practiceId], references: [id], onDelete: Cascade)
-  question Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
-  @@unique([practiceId, questionId])
-}
-
-model QuizQuestion {
-  id         String  @id @default(uuid())
-  quizId     String
-  questionId String
-  orderIndex Int     @default(0)
-  points     Decimal @default(1) @db.Decimal(5, 2)
-
-  quiz     Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
-  @@unique([quizId, questionId])
-}
-
-model DailyTestQuestion {
-  id         String  @id @default(uuid())
-  testId     String
-  questionId String
-  orderIndex Int     @default(0)
-  points     Decimal @default(1) @db.Decimal(5, 2)
-
-  dailyTest DailyTest @relation(fields: [testId], references: [id], onDelete: Cascade)
-  question  Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
-  @@unique([testId, questionId])
-}
-
-// =====================================================================
-// TABEL SESI per Assessment
-// Siswa adalah guest — tidak ada userId, pakai nisn + identitas manual
-// =====================================================================
-
-model ExamSession {
-  id              String        @id @default(uuid())
-  examId          String
-  nisn            String
-  studentName     String
-  studentClass    String
-  sessionToken    String        @unique
-  status          SessionStatus @default(in_progress)
-  violationCount  Int           @default(0)
-  score           Decimal?      @db.Decimal(5, 2)
-  totalCorrect    Int           @default(0)
-  totalWrong      Int           @default(0)
-  totalUnanswered Int           @default(0)
-  startedAt       DateTime      @default(now())
-  submittedAt     DateTime?
-  ipAddress       String?
-  userAgent       String?       @db.Text
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  exam           Exam            @relation(fields: [examId], references: [id])
-  studentAnswers StudentAnswer[]
-  violations     Violation[]
-
-  // Satu NISN hanya bisa ikut sekali per ujian
-  @@unique([examId, nisn])
-}
-
-model PracticeSession {
-  id              String    @id @default(uuid())
-  practiceId      String
-  nisn            String
-  studentName     String
-  studentClass    String
-  sessionToken    String    @unique
-  score           Decimal?  @db.Decimal(5, 2)
-  totalCorrect    Int       @default(0)
-  totalWrong      Int       @default(0)
-  totalUnanswered Int       @default(0)
-  startedAt       DateTime  @default(now())
-  submittedAt     DateTime?
-  ipAddress       String?
-  userAgent       String?   @db.Text
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  // Tidak ada UNIQUE(practiceId, nisn) — latihan bisa diulang
-  practice       PracticeSet     @relation(fields: [practiceId], references: [id])
-  studentAnswers StudentAnswer[]
-}
-
-model QuizSession {
-  id              String        @id @default(uuid())
-  quizId          String
-  nisn            String
-  studentName     String
-  studentClass    String
-  sessionToken    String        @unique
-  status          SessionStatus @default(in_progress)
-  violationCount  Int           @default(0)
-  score           Decimal?      @db.Decimal(5, 2)
-  totalCorrect    Int           @default(0)
-  totalWrong      Int           @default(0)
-  totalUnanswered Int           @default(0)
-  startedAt       DateTime      @default(now())
-  submittedAt     DateTime?
-  ipAddress       String?
-  userAgent       String?       @db.Text
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  quiz           Quiz            @relation(fields: [quizId], references: [id])
-  studentAnswers StudentAnswer[]
-  violations     Violation[]
-
-  @@unique([quizId, nisn])
-}
-
-model DailyTestSession {
-  id              String        @id @default(uuid())
-  testId          String
-  nisn            String
-  studentName     String
-  studentClass    String
-  sessionToken    String        @unique
-  status          SessionStatus @default(in_progress)
-  violationCount  Int           @default(0)
-  isPassed        Boolean       @default(false) // score >= kkm
-  score           Decimal?      @db.Decimal(5, 2)
-  totalCorrect    Int           @default(0)
-  totalWrong      Int           @default(0)
-  totalUnanswered Int           @default(0)
-  startedAt       DateTime      @default(now())
-  submittedAt     DateTime?
-  ipAddress       String?
-  userAgent       String?       @db.Text
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  dailyTest      DailyTest       @relation(fields: [testId], references: [id])
-  studentAnswers StudentAnswer[]
-  violations     Violation[]
-
-  @@unique([testId, nisn])
-}
-
-// =====================================================================
-// STUDENT ANSWERS — shared table (polymorphic)
-// =====================================================================
-
-model StudentAnswer {
-  id          String      @id @default(uuid())
-  sessionType SessionType
-
-  // Polymorphic FK — hanya satu yang terisi
-  examSessionId      String?
-  practiceSessionId  String?
-  quizSessionId      String?
-  dailyTestSessionId String?
-
-  questionId       String
-  selectedOptionId String?    // null jika essay atau belum dijawab
-  essayAnswer      String?    @db.Text
-  isCorrect        Boolean?   // null jika essay belum dinilai
-  manualScore      Decimal?   @db.Decimal(5, 2)
-  teacherComment   String?    @db.Text
-  answeredAt       DateTime?
-  timeSpentSeconds Int?
-  isFlagged        Boolean    @default(false)
-
-  question       Question        @relation(fields: [questionId], references: [id])
-  selectedOption QuestionOption? @relation(fields: [selectedOptionId], references: [id])
-
-  examSession      ExamSession?      @relation(fields: [examSessionId], references: [id], onDelete: Cascade)
-  practiceSession  PracticeSession?  @relation(fields: [practiceSessionId], references: [id], onDelete: Cascade)
-  quizSession      QuizSession?      @relation(fields: [quizSessionId], references: [id], onDelete: Cascade)
-  dailyTestSession DailyTestSession? @relation(fields: [dailyTestSessionId], references: [id], onDelete: Cascade)
-}
-
-// =====================================================================
-// VIOLATIONS — log pelanggaran anti-cheat
-// Tidak berlaku untuk practice (latihan)
-// =====================================================================
-
-model Violation {
-  id              String               @id @default(uuid())
-  sessionType     ViolationSessionType
-  violationType   ViolationType
-  violationNumber Int
-  currentQuestion Int?
-  description     String?              @db.Text
-  occurredAt      DateTime             @default(now())
-
-  // Polymorphic FK
-  examSessionId      String?
-  quizSessionId      String?
-  dailyTestSessionId String?
-
-  examSession      ExamSession?      @relation(fields: [examSessionId], references: [id], onDelete: Cascade)
-  quizSession      QuizSession?      @relation(fields: [quizSessionId], references: [id], onDelete: Cascade)
-  dailyTestSession DailyTestSession? @relation(fields: [dailyTestSessionId], references: [id], onDelete: Cascade)
-}
-
-// =====================================================================
-// KISI-KISI
-// FIX: Relasi "creator" seharusnya ke Subject (bernama "subject"),
-//      bukan sebaliknya. Pisahkan nama relasi dengan jelas.
-// =====================================================================
-
-model KisiKisi {
-  id             String   @id @default(uuid())
-  createdBy      String
-  title          String
-  subjectId      String
-  kelas          String
-  semester       String   // "1" atau "2"
-  tahunAjaran    String
-  kompetensiInti String?  @db.Text
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  // FIX: Nama relasi diperjelas — "subject" ke Subject, "user" ke User
-  subject Subject      @relation(fields: [subjectId], references: [id])
-  user    User         @relation(fields: [createdBy], references: [id])
-  items   KisiKisiItem[]
-}
-
-model KisiKisiItem {
-  id              String   @id @default(uuid())
-  kisiKisiId      String
-  kompetensiDasar String?  @db.Text
-  materi          String?  @db.Text
-  indikatorSoal   String?  @db.Text
-  levelKognitif   String?
-  bentukSoal      String?
-  nomorSoal       Int?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  kisiKisi KisiKisi @relation(fields: [kisiKisiId], references: [id], onDelete: Cascade)
-}
-
-// =====================================================================
-// QUESTION CARDS & CARD SETS
-// =====================================================================
-
-model CardSet {
-  id          String   @id @default(uuid())
-  createdBy   String
-  title       String
-  subjectId   String?  // nullable — CardSet bisa lintas mapel
-  kelas       String?
-  description String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  creator User           @relation(fields: [createdBy], references: [id])
-  cards   QuestionCard[]
-}
-
-model QuestionCard {
-  id        String  @id @default(uuid())
-  createdBy String
-  subjectId String  // NOT NULL
-  cardSetId String? // opsional, bisa standalone
-
-  // Sisi depan
-  frontQuestion  String  @db.Text
-  frontKd        String? @db.Text
-  frontIndikator String? @db.Text
-
-  // Sisi belakang
-  backAnswer      String  @db.Text
-  backExplanation String? @db.Text
-  backBloomLevel  String? // C1–C6
-
+model MataPelajaran {
+  id        Int      @id @default(autoincrement())
+  nama      String
   kelas     String
-  tags      String?  @db.Text
+  deskripsi String?
+  warna     String   @default("zinc")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // FIX: Nama relasi diperjelas — "subject" ke Subject, "user" ke User
-  subject Subject  @relation(fields: [subjectId], references: [id])
-  user    User     @relation(fields: [createdBy], references: [id])
-  cardSet CardSet? @relation(fields: [cardSetId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  soal        Soal[]
+  ujian       Ujian[]
+  konfigNilai KonfigNilai?
+
+  @@map("mata_pelajaran")
 }
 
-// =====================================================================
-// FIX BARU: GRADE CONFIG — Konfigurasi bobot nilai akhir per mapel
-// Menampung bobot ujian, ulangan, latihan, kuis, dan KKM
-// =====================================================================
-
-model GradeConfig {
-  id              String   @id @default(uuid())
-  createdBy       String
-  subjectId       String
-  kelas           String
-  tahunAjaran     String   // contoh: "2025/2026"
-  semester        String   // "1" atau "2"
-  kkm             Int      @default(75)
-
-  // Bobot utama (total harus = 100)
-  bobotExam       Int      @default(40) // % ujian
-  bobotDailyTest  Int      @default(25) // % ulangan
-  bobotPractice   Int      @default(20) // % latihan
-  bobotQuiz       Int      @default(15) // % kuis
-
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  subject         Subject           @relation(fields: [subjectId], references: [id])
-  user            User              @relation(fields: [createdBy], references: [id])
-  examWeights     ExamWeight[]
-  finalGrades     FinalGrade[]
-
-  // Satu konfigurasi per mapel-kelas-semester-tahunAjaran
-  @@unique([subjectId, kelas, semester, tahunAjaran])
+enum TipeSoal {
+  PILIHAN_GANDA
+  ESSAY
 }
 
-// =====================================================================
-// FIX BARU: EXAM WEIGHT — Sub-bobot per ujian dalam GradeConfig
-// Contoh: UAS 50%, UTS 50% dari total bobot "ujian"
-// =====================================================================
+model Soal {
+  id           String   @id @default(cuid())
+  pertanyaan   String
+  tipe         TipeSoal @default(PILIHAN_GANDA)
+  topik        String?
+  gambarUrl    String?
+  opsiA        String?
+  opsiB        String?
+  opsiC        String?
+  opsiD        String?
+  opsiE        String?
+  jawabanBenar String?
+  pembahasan   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-model ExamWeight {
-  id            String   @id @default(uuid())
-  gradeConfigId String
-  examId        String
-  weight        Int      // persentase dari total bobotExam, harus total = 100
-  createdAt     DateTime @default(now())
+  mataPelajaranId Int
+  mataPelajaran   MataPelajaran @relation(fields: [mataPelajaranId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  ujianSoal UjianSoal[]
+
+  @@map("soal")
+}
+
+enum TipeUjian {
+  UJIAN
+  ULANGAN
+  LATIHAN
+  KUIS
+}
+
+enum StatusUjian {
+  DRAFT
+  AKTIF
+  BERLANGSUNG
+  SELESAI
+}
+
+model Ujian {
+  id             String      @id @default(cuid())
+  nama           String
+  tipe           TipeUjian   @default(UJIAN)
+  status         StatusUjian @default(AKTIF)
+  token          String      @unique
+  durasi         Int
+  kelas          String
+  tanggalMulai   DateTime?
+  tanggalSelesai DateTime?
+  acakSoal       Boolean     @default(false)
+  acakOpsi       Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  mataPelajaranId Int
+  mataPelajaran   MataPelajaran @relation(fields: [mataPelajaranId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  soalUjian UjianSoal[]
+  sesiSiswa SesiSiswa[]
+
+  @@map("ujian")
+}
+
+model UjianSoal {
+  id     Int @id @default(autoincrement())
+  urutan Int @default(0)
+
+  ujianId String
+  ujian   Ujian  @relation(fields: [ujianId], references: [id], onDelete: Cascade)
+
+  soalId String
+  soal   Soal   @relation(fields: [soalId], references: [id])
+
+  @@unique([ujianId, soalId])
+  @@map("ujian_soal")
+}
+
+enum StatusSesi {
+  BERLANGSUNG
+  SELESAI
+  TIMEOUT
+  DIHENTIKAN
+}
+
+model SesiSiswa {
+  id                String     @id @default(cuid())
+  nisn              String
+  namaLengkap       String
+  kelas             String
+  status            StatusSesi @default(BERLANGSUNG)
+  nilaiBenar        Int        @default(0)
+  nilaiSalah        Int        @default(0)
+  nilaiAkhir        Float      @default(0)
+  jumlahPelanggaran Int        @default(0)
+  mulaiAt           DateTime   @default(now())
+  selesaiAt         DateTime?
+  ipAddress         String?
+  userAgent         String?
+
+  ujianId String
+  ujian   Ujian  @relation(fields: [ujianId], references: [id])
+
+  jawaban     JawabanSiswa[]
+  pelanggaran PelanggaranSiswa[]
+
+  @@map("sesi_siswa")
+}
+
+model JawabanSiswa {
+  id             Int      @id @default(autoincrement())
+  jawabanDipilih String?
+  isBenar        Boolean  @default(false)
+  isRagu         Boolean  @default(false)
+  waktuDijawab   DateTime @default(now())
+  soalId         String
+
+  sesiId String
+  sesi   SesiSiswa @relation(fields: [sesiId], references: [id], onDelete: Cascade)
+
+  @@unique([sesiId, soalId])
+  @@map("jawaban_siswa")
+}
+
+model PelanggaranSiswa {
+  id      Int      @id @default(autoincrement())
+  jenis   String
+  catatan String?
+  waktu   DateTime @default(now())
+
+  sesiId String
+  sesi   SesiSiswa @relation(fields: [sesiId], references: [id], onDelete: Cascade)
+
+  @@map("pelanggaran_siswa")
+}
+
+model KonfigNilai {
+  id            Int      @id @default(autoincrement())
+  bobotUjian    Int      @default(40)
+  bobotUlangan  Int      @default(25)
+  bobotLatihan  Int      @default(20)
+  bobotKuis     Int      @default(15)
+  kkm           Int      @default(70)
+  subBobotUjian Json?
   updatedAt     DateTime @updatedAt
 
-  gradeConfig GradeConfig @relation(fields: [gradeConfigId], references: [id], onDelete: Cascade)
-  exam        Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
+  mataPelajaranId Int    @unique
+  mataPelajaran   MataPelajaran @relation(fields: [mataPelajaranId], references: [id])
 
-  @@unique([gradeConfigId, examId])
-}
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-// =====================================================================
-// FIX BARU: FINAL GRADE — Hasil kalkulasi nilai akhir per siswa
-// Dihitung dari GradeConfig + semua sesi yang ada
-// =====================================================================
-
-model FinalGrade {
-  id            String   @id @default(uuid())
-  gradeConfigId String
-  subjectId     String
-  kelas         String
-  nisn          String
-  studentName   String
-
-  // Nilai komponen (rata-rata masing-masing)
-  examScore     Decimal  @db.Decimal(5, 2)
-  dailyScore    Decimal  @db.Decimal(5, 2)
-  practiceScore Decimal  @db.Decimal(5, 2)
-  quizScore     Decimal  @db.Decimal(5, 2)
-
-  // Nilai akhir terbobot
-  finalScore    Decimal  @db.Decimal(5, 2)
-
-  isPassed      Boolean  @default(false) // finalScore >= kkm
-  grade         String?  // "A", "B", "C", "D"
-
-  calculatedAt  DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // Relasi
-  gradeConfig GradeConfig @relation(fields: [gradeConfigId], references: [id])
-  subject     Subject     @relation(fields: [subjectId], references: [id])
-  user        User        @relation(fields: [nisn], references: [id])
-
-  // Satu nilai akhir per siswa per konfigurasi
-  @@unique([gradeConfigId, nisn])
+  @@map("konfig_nilai")
 }

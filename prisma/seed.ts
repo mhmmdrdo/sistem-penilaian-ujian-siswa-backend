@@ -1,270 +1,222 @@
-import {
-  PrismaClient,
-  QuestionType,
-  CognitiveLevel,
-  Difficulty,
-  SessionStatus,
-  AntiCheatLevel,
-  DailyTestCategory,
-  SessionType,
-} from '@prisma/client'
-import { randomUUID } from 'crypto'
+import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
-const prisma = new PrismaClient()
+// const prisma = new PrismaClient();
 
-function generateCode(prefix: string) {
-  return `${prefix}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
-}
-
-function generateToken() {
-  return Math.random().toString(36).substring(2, 10).toUpperCase()
-}
-
+// supabase
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DIRECT_URL,
+    },
+  },
+})
 async function main() {
-  console.log('🌱 Seeding...')
+  console.log("🌱 Seeding database...");
 
-  // =====================
-  // USERS — hanya admin dan guru (Fix #1: hapus role siswa)
-  // =====================
-  const admin = await prisma.user.create({
-    data: {
-      name: 'Admin',
-      email: 'admin@gmail.com',
-      passwordHash: '$2b$10$hashedpassword', // gunakan bcrypt di production
-      role: 'admin',
-      namaSekolah: 'SMK Negeri 1 Pekanbaru',
-      logoSekolah: 'https://example.com/logo.png',
-    },
-  })
+  // ─── USERS ───────────────────────────────────────────
+  const password = await bcrypt.hash("password123", 12);
 
-  const guru = await prisma.user.create({
-    data: {
-      name: 'Guru Matematika',
-      email: 'guru@gmail.com',
-      passwordHash: '$2b$10$hashedpassword',
-      role: 'guru',
-      namaSekolah: 'SMK Negeri 1 Pekanbaru',
-      logoSekolah: 'https://example.com/logo.png',
-    },
-  })
-
-  // =====================
-  // SUBJECT
-  // =====================
-  const subject = await prisma.subject.create({
-    data: {
-      name: 'Matematika',
-      code: 'MTK',
-      createdBy: admin.id,
-    },
-  })
-
-  // =====================
-  // RELASI GURU <-> MAPEL
-  // =====================
-  await prisma.teacherSubject.create({
-    data: {
-      userId: guru.id,
-      subjectId: subject.id,
-    },
-  })
-
-  // =====================
-  // QUESTIONS + OPTIONS
-  // =====================
-  const questionIds: string[] = []
-
-  for (let i = 1; i <= 30; i++) {
-    const question = await prisma.question.create({
-      data: {
-        createdBy: guru.id,
-        questionType: QuestionType.multiple_choice,
-        content: `Berapakah ${i} + ${i}?`,
-        subjectId: subject.id,
-        kelas: '10',
-        cognitiveLevel: CognitiveLevel.C1,
-        difficulty: Difficulty.mudah,
-        // Fix #9: Buat opsi jawaban
-        options: {
-          create: [
-            { label: 'A', content: `${i + i - 2}`, isCorrect: false, orderIndex: 0 },
-            { label: 'B', content: `${i + i - 1}`, isCorrect: false, orderIndex: 1 },
-            { label: 'C', content: `${i + i}`,     isCorrect: true,  orderIndex: 2 },
-            { label: 'D', content: `${i + i + 1}`, isCorrect: false, orderIndex: 3 },
-            { label: 'E', content: `${i + i + 2}`, isCorrect: false, orderIndex: 4 },
-          ],
-        },
+  const users = await Promise.all([
+    prisma.user.upsert({
+      where: { email: "admin@gmail.com" },
+      update: {},
+      create: {
+        name: "Muhammad Ridho Ganteng",
+        email: "admin@gmail.com",
+        password,
+        role: "ADMIN",
+        namaSekolah: "Dinas Pendidikan",
+        isActive: true,
       },
-    })
-    questionIds.push(question.id)
-  }
+    }),
+    prisma.user.upsert({
+      where: { email: "budi.santosa@smansatu.sch.id" },
+      update: {},
+      create: {
+        name: "Budi Santosa",
+        email: "budi.santosa@smansatu.sch.id",
+        password,
+        role: "GURU",
+        nip: "198703152010012005",
+        namaSekolah: "SMA Negeri 1 Jakarta",
+        isActive: true,
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: "sari.indrawati@smandua.sch.id" },
+      update: {},
+      create: {
+        name: "Sari Indrawati",
+        email: "sari.indrawati@smandua.sch.id",
+        password,
+        role: "GURU",
+        nip: "199001202015011003",
+        namaSekolah: "SMA Negeri 2 Bandung",
+        isActive: true,
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: "andi.prasetyo@smantiga.sch.id" },
+      update: {},
+      create: {
+        name: "Andi Prasetyo",
+        email: "andi.prasetyo@smantiga.sch.id",
+        password,
+        role: "GURU",
+        nip: "198812052012012009",
+        namaSekolah: "SMA Negeri 3 Surabaya",
+        isActive: true,
+      },
+    }),
+  ]);
 
-  // =====================
-  // EXAM (dibuat oleh Guru, bukan siswa — Fix #13)
-  // =====================
-  const exam = await prisma.exam.create({
+  const [admin, budi, sari, andi] = users;
+  console.log(`✅ ${users.length} users created`);
+
+  // ─── MATA PELAJARAN ───────────────────────────────────
+  const mataPelajaran = await Promise.all([
+    prisma.mataPelajaran.create({
+      data: { nama: "Matematika Peminatan", kelas: "XII IPA 1", deskripsi: "Materi kalkulus, fungsi, dan limit", warna: "zinc", userId: budi.id },
+    }),
+    prisma.mataPelajaran.create({
+      data: { nama: "Matematika Wajib", kelas: "XI IPA 2", deskripsi: "Trigonometri dan fungsi komposisi", warna: "blue", userId: budi.id },
+    }),
+    prisma.mataPelajaran.create({
+      data: { nama: "Kimia", kelas: "XII IPS 1", deskripsi: "Kimia organik dan reaksi dasar", warna: "emerald", userId: sari.id },
+    }),
+    prisma.mataPelajaran.create({
+      data: { nama: "Fisika", kelas: "XI IPA 1", deskripsi: "Dinamika dan kinematika", warna: "violet", userId: andi.id },
+    }),
+    prisma.mataPelajaran.create({
+      data: { nama: "Biologi", kelas: "X IPA 1", deskripsi: "Sel dan jaringan tumbuhan", warna: "amber", userId: sari.id },
+    }),
+  ]);
+
+  const [matmat, matwajib, kimia, fisika, bio] = mataPelajaran;
+  console.log(`✅ ${mataPelajaran.length} mata pelajaran created`);
+
+  // ─── SOAL ─────────────────────────────────────────────
+  const soalMatmat = await Promise.all([
+    prisma.soal.create({
+      data: {
+        pertanyaan: "Tentukan nilai lim x→2 (x²+3x−5)",
+        tipe: "PILIHAN_GANDA", topik: "Limit Fungsi",
+        opsiA: "5", opsiB: "7", opsiC: "9", opsiD: "11",opsiE: "121",
+        jawabanBenar: "A",
+        pembahasan: "Substitusi langsung x=2: 4+6-5=5",
+        mataPelajaranId: matmat.id, userId: budi.id,
+      },
+    }),
+    prisma.soal.create({
+      data: {
+        pertanyaan: "Diketahui fungsi f(x) = 2x² + 3x − 5. Tentukan nilai f(3).",
+        tipe: "PILIHAN_GANDA", topik: "Fungsi Kuadrat",
+        opsiA: "22", opsiB: "18", opsiC: "16", opsiD: "28",opsiE: "281",
+        jawabanBenar: "A",
+        pembahasan: "f(3) = 2(9) + 9 − 5 = 22",
+        mataPelajaranId: matmat.id, userId: budi.id,
+      },
+    }),
+    prisma.soal.create({
+      data: {
+        pertanyaan: "Hitung integral ∫(3x²+2x) dx",
+        tipe: "PILIHAN_GANDA", topik: "Integral",
+        opsiA: "x³+x²+C", opsiB: "3x³+2x²+C", opsiC: "x³+x²", opsiD: "6x+2+C",opsiE: "6x+2+C+x",
+        jawabanBenar: "A",
+        pembahasan: "Integral dari 3x² adalah x³, dari 2x adalah x², tambah konstanta C",
+        mataPelajaranId: matmat.id, userId: budi.id,
+      },
+    }),
+  ]);
+
+  console.log(`✅ ${soalMatmat.length} soal created`);
+
+  // ─── UJIAN ────────────────────────────────────────────
+  const ujian = await prisma.ujian.create({
     data: {
-      examCode: generateCode('UJN'),
-      createdBy: guru.id,
-      title: 'Ujian Tengah Semester Matematika',
-      subjectId: subject.id,
-      kelas: '10',
-      durationMinutes: 60,
-      accessToken: generateToken(),
-      instructions: 'Kerjakan soal dengan teliti. Pilih satu jawaban yang paling tepat.',
-      startTime: new Date(),
-      endTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 hari ke depan
+      nama: "Ujian Tengah Semester Matematika",
+      tipe: "UJIAN",
+      token: "MAT-7X2K-9PQR",
+      durasi: 60,
+      kelas: "XII IPA 1",
+      tanggalMulai: new Date(),
+      tanggalSelesai: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      acakSoal: false,
+      acakOpsi: false,
+      mataPelajaranId: matmat.id,
+      userId: budi.id,
+      soalUjian: {
+        create: soalMatmat.map((s, idx) => ({
+          soalId: s.id,
+          urutan: idx + 1,
+        })),
+      },
     },
-  })
+  });
 
-  // Assign soal ke ujian (Fix #5: pakai tabel pivot)
-  await prisma.examQuestion.createMany({
-    data: questionIds.slice(0, 20).map((qId, idx) => ({
-      examId: exam.id,
-      questionId: qId,
-      orderIndex: idx,
-      points: 5,
-    })),
-  })
+  console.log(`✅ Ujian created: ${ujian.nama}`);
 
-  // =====================
-  // PRACTICE SET (dibuat oleh Guru — Fix #13)
-  // =====================
-  const practiceSet = await prisma.practiceSet.create({
-    data: {
-      practiceCode: generateCode('LAT'),
-      createdBy: guru.id,
-      title: 'Latihan Persiapan UTS Matematika',
-      subjectId: subject.id,
-      kelas: '10',
-      description: 'Latihan mandiri untuk mempersiapkan UTS. Pembahasan tersedia setelah menjawab.',
-      showExplanation: true,
-      showResult: true,
-    },
-  })
-
-  await prisma.practiceQuestion.createMany({
-    data: questionIds.slice(0, 15).map((qId, idx) => ({
-      practiceId: practiceSet.id,
-      questionId: qId,
-      orderIndex: idx,
-    })),
-  })
-
-  // =====================
-  // QUIZ (dibuat oleh Guru — Fix #13)
-  // =====================
-  const quiz = await prisma.quiz.create({
-    data: {
-      quizCode: generateCode('KUI'),
-      createdBy: guru.id,
-      title: 'Kuis Harian — Operasi Bilangan',
-      subjectId: subject.id,
-      kelas: '10',
-      durationMinutes: 15,
-      accessToken: generateToken(),
-      antiCheatLevel: AntiCheatLevel.light,
-      showResultImmediately: true,
-    },
-  })
-
-  await prisma.quizQuestion.createMany({
-    data: questionIds.slice(0, 10).map((qId, idx) => ({
-      quizId: quiz.id,
-      questionId: qId,
-      orderIndex: idx,
-      points: 10,
-    })),
-  })
-
-  // =====================
-  // DAILY TEST (dibuat oleh Guru — Fix #13)
-  // =====================
-  const dailyTest = await prisma.dailyTest.create({
-    data: {
-      testCode: generateCode('ULG'),
-      createdBy: guru.id,
-      title: 'Ulangan Harian Bab 1 — Bilangan',
-      category: DailyTestCategory.ulangan_harian,
-      subjectId: subject.id,
-      kelas: '10',
-      semester: '1',
-      tahunAjaran: '2025/2026',
-      durationMinutes: 45,
-      accessToken: generateToken(),
-      kkm: 75,
-      instructions: 'Kerjakan soal berikut dengan jujur.',
-      startTime: new Date(),
-      endTime: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-    },
-  })
-
-  await prisma.dailyTestQuestion.createMany({
-    data: questionIds.slice(0, 20).map((qId, idx) => ({
-      testId: dailyTest.id,
-      questionId: qId,
-      orderIndex: idx,
-      points: 5,
-    })),
-  })
-
-  // =====================
-  // CONTOH SESI SISWA (guest — Fix #7)
-  // Siswa tidak punya akun, hanya pakai NISN + nama + kelas
-  // =====================
+  // ─── SESI SISWA (CONTOH) ─────────────────────────────
   const siswaSample = [
-    { nisn: '1234567890', name: 'Andi Pratama', kelas: '10A' },
-    { nisn: '0987654321', name: 'Budi Santoso', kelas: '10B' },
-    { nisn: '1122334455', name: 'Citra Dewi',   kelas: '10A' },
-  ]
+    { nisn: "1234567890", namaLengkap: "Andi Pratama", kelas: "XII IPA 1" },
+    { nisn: "0987654321", namaLengkap: "Budi Santoso", kelas: "XII IPA 1" },
+    { nisn: "1122334455", namaLengkap: "Citra Dewi", kelas: "XII IPA 1" },
+  ];
 
   for (const siswa of siswaSample) {
-    const examSession = await prisma.examSession.create({
+    const sesi = await prisma.sesiSiswa.create({
       data: {
-        examId: exam.id,
         nisn: siswa.nisn,
-        studentName: siswa.name,
-        studentClass: siswa.kelas,
-        sessionToken: generateToken(),
-        status: SessionStatus.submitted,
-        score: Math.floor(Math.random() * 40 + 60), // 60–100
-        totalCorrect: 15,
-        totalWrong: 5,
-        totalUnanswered: 0,
-        submittedAt: new Date(),
+        namaLengkap: siswa.namaLengkap,
+        kelas: siswa.kelas,
+        ujianId: ujian.id,
+        status: "SELESAI",
+        nilaiBenar: 2,
+        nilaiSalah: 1,
+        nilaiAkhir: 66.67,
+        selesaiAt: new Date(),
       },
-    })
+    });
 
     // Contoh jawaban siswa
-    const examQs = await prisma.examQuestion.findMany({ where: { examId: exam.id }, take: 3 })
-    for (const eq of examQs) {
-      const options = await prisma.questionOption.findMany({ where: { questionId: eq.questionId } })
-      const correctOption = options.find((o) => o.isCorrect)
-      await prisma.studentAnswer.create({
+    for (const soal of soalMatmat) {
+      await prisma.jawabanSiswa.create({
         data: {
-          sessionType: SessionType.exam,
-          examSessionId: examSession.id,
-          questionId: eq.questionId,
-          selectedOptionId: correctOption?.id ?? null,
-          isCorrect: true,
-          timeSpentSeconds: Math.floor(Math.random() * 60 + 10),
+          sesiId: sesi.id,
+          soalId: soal.id,
+          jawabanDipilih: soal.jawabanBenar,
+          isBenar: true,
+          waktuDijawab: new Date(),
         },
-      })
+      });
     }
   }
 
-  console.log('✅ Seeder selesai')
-  console.log(`   Exam code  : ${exam.examCode}  | Token: ${exam.accessToken}`)
-  console.log(`   Latihan    : ${practiceSet.practiceCode}`)
-  console.log(`   Kuis       : ${quiz.quizCode}  | Token: ${quiz.accessToken}`)
-  console.log(`   Ulangan    : ${dailyTest.testCode} | Token: ${dailyTest.accessToken}`)
+  console.log(`✅ ${siswaSample.length} sesi siswa created`);
+
+  // ─── KONFIGURASI NILAI ───────────────────────────────
+  await prisma.konfigNilai.create({
+    data: {
+      bobotUjian: 40,
+      bobotUlangan: 25,
+      bobotLatihan: 20,
+      bobotKuis: 15,
+      kkm: 70,
+      mataPelajaranId: matmat.id,
+      userId: budi.id,
+    },
+  });
+
+  console.log("✅ Konfigurasi nilai created");
+  console.log("✅ Seed selesai");
 }
 
 main()
   .catch((e) => {
-    console.error(e)
-    process.exit(1)
+    console.error(e);
+    process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect()
-  })
+    await prisma.$disconnect();
+  });
