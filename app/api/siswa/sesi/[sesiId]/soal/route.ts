@@ -27,21 +27,44 @@ export async function GET(req: NextRequest, { params }: { params: { sesiId: stri
     soalList = [...soalList].sort(() => Math.random() - 0.5);
   }
 
-  return NextResponse.json({
-    soal: soalList.map((us, idx) => ({
-      id: us.soal.id,
-      nomorUrut: idx + 1,
-      pertanyaan: us.soal.pertanyaan,
-      tipe: us.soal.tipe,
-      topik: us.soal.topik,
-      gambarUrl: us.soal.gambarUrl,
-      opsiA: us.soal.opsiA,
-      opsiB: us.soal.opsiB,
-      opsiC: us.soal.opsiC,
-      opsiD: us.soal.opsiD,
-      opsiE: us.soal.opsiE,
+  // return NextResponse.json({
+  //   soal: soalList.map((us, idx) => ({
+  //     id: us.soal.id,
+  //     nomorUrut: idx + 1,
+  //     pertanyaan: us.soal.pertanyaan,
+  //     tipe: us.soal.tipe,
+  //     topik: us.soal.topik,
+  //     gambarUrl: us.soal.gambarUrl,
+  //     opsiA: us.soal.opsiA,
+  //     opsiB: us.soal.opsiB,
+  //     opsiC: us.soal.opsiC,
+  //     opsiD: us.soal.opsiD,
+  //     opsiE: us.soal.opsiE,
 
-    })),
+  //   })),
+  //   sisaWaktu,
+  // });
+  return NextResponse.json({
+    soal: soalList.map((us, idx) => {
+      // ✅ Hanya kirim gambarUrl jika berupa URL Cloudinary (https://)
+      const gambarUrl = us.soal.gambarUrl?.startsWith("https://")
+        ? us.soal.gambarUrl
+        : null;
+
+      return {
+        id: us.soal.id,
+        nomorUrut: idx + 1,
+        pertanyaan: us.soal.pertanyaan,
+        tipe: us.soal.tipe,
+        topik: us.soal.topik,
+        gambarUrl,
+        opsiA: us.soal.opsiA,
+        opsiB: us.soal.opsiB,
+        opsiC: us.soal.opsiC,
+        opsiD: us.soal.opsiD,
+        opsiE: us.soal.opsiE,
+      };
+    }),
     sisaWaktu,
   });
 }
