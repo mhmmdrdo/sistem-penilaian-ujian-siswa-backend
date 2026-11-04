@@ -39,6 +39,68 @@ export async function GET(req: NextRequest, { params }: { params: { ujianId: str
     orderBy: { [sortMap[sort] || "namaLengkap"]: dir },
   });
 
+  const [soalUjian, sesiUntukAnalisis] = await Promise.all([
+    prisma.ujianSoal.findMany({
+      where: { ujianId: params.ujianId },
+      select: { soalId: true, urutan: true },
+      orderBy: { urutan: "asc" },
+    }),
+    prisma.sesiSiswa.findMany({
+      where: {
+        ujianId: params.ujianId,
+        status: { in: ["SELESAI", "TIMEOUT", "DIHENTIKAN"] },
+      },
+      select: {
+        jawaban: { select: { soalId: true, isBenar: true } },
+      },
+    }),
+  ]);
+
+  const totalPesertaAnalisis = sesiUntukAnalisis.length;
+  const totalBenarPeserta = sesiUntukAnalisis.map((sesi) =>
+    sesi.jawaban.filter((jawaban) => jawaban.isBenar).length
+  );
+  const analisisSoal = soalUjian.map((soal) => {
+    const jawabanBenar = sesiUntukAnalisis.map((sesi) =>
+      sesi.jawaban.some((jawaban) => jawaban.soalId === soal.soalId && jawaban.isBenar)
+    );
+    const jumlahBenar = jawabanBenar.filter(Boolean).length;
+    const jumlahSalah = totalPesertaAnalisis - jumlahBenar;
+    const kesukaran = totalPesertaAnalisis ? jumlahBenar / totalPesertaAnalisis : 0;
+    const kategori = kesukaran <= 0.3 ? "Sukar" : kesukaran <= 0.7 ? "Sedang" : "Mudah";
+
+    // Korelasi point-biserial menggunakan total skor tanpa soal yang sedang dianalisis.
+    const totalTanpaSoal = totalBenarPeserta.map((total, index) => total - (jawabanBenar[index] ? 1 : 0));
+    const rataRataTotalTanpaSoal = totalTanpaSoal.length
+      ? totalTanpaSoal.reduce((total, benar) => total + benar, 0) / totalTanpaSoal.length
+      : 0;
+    const simpanganBakuTotalTanpaSoal = totalTanpaSoal.length
+      ? Math.sqrt(totalTanpaSoal.reduce((total, benar) => total + (benar - rataRataTotalTanpaSoal) ** 2, 0) / totalTanpaSoal.length)
+      : 0;
+    const rataRataBenar = jumlahBenar
+      ? totalTanpaSoal
+        .filter((_, index) => jawabanBenar[index])
+        .reduce((total, benar) => total + benar, 0) / jumlahBenar
+      : 0;
+    const rataRataSalah = jumlahSalah
+      ? totalTanpaSoal
+        .filter((_, index) => !jawabanBenar[index])
+        .reduce((total, benar) => total + benar, 0) / jumlahSalah
+      : 0;
+    const reliabilitas = jumlahBenar && jumlahSalah && simpanganBakuTotalTanpaSoal
+      ? ((rataRataBenar - rataRataSalah) / simpanganBakuTotalTanpaSoal) * Math.sqrt(kesukaran * (1 - kesukaran))
+      : null;
+
+    return {
+      nomorSoal: soal.urutan,
+      jumlahBenar,
+      jumlahSalah,
+      kesukaran: Math.round(kesukaran * 1000) / 1000,
+      kategori,
+      reliabilitas: reliabilitas === null ? null : Math.round(reliabilitas * 1000) / 1000,
+    };
+  });
+
   const nilaiList = sesiList.map((s) => s.nilaiAkhir);
   const lulus = sesiList.filter((s) => s.nilaiAkhir >= kkm).length;
 
@@ -60,5 +122,9 @@ export async function GET(req: NextRequest, { params }: { params: { ujianId: str
       pelanggaran: s.jumlahPelanggaran,
       catatan: [...new Set(s.pelanggaran.map((p) => p.jenis))],
     })),
+    analisisSoal: {
+      totalPeserta: totalPesertaAnalisis,
+      data: analisisSoal,
+    },
   });
 }

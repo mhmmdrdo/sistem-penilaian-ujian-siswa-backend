@@ -4,9 +4,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "mysql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 enum Role {
@@ -24,6 +23,8 @@ model User {
   namaSekolah String?
   isActive    Boolean   @default(true)
   avatarUrl   String?
+  openrouterApiKeyEncrypted String? @db.Text
+  openrouterApiKeyLast4      String? @db.VarChar(4)
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -62,17 +63,17 @@ enum TipeSoal {
 
 model Soal {
   id           String   @id @default(cuid())
-  pertanyaan   String
+  pertanyaan   String   @db.Text
   tipe         TipeSoal @default(PILIHAN_GANDA)
   topik        String?
   gambarUrl    String?
-  opsiA        String?
-  opsiB        String?
-  opsiC        String?
-  opsiD        String?
-  opsiE        String?
-  jawabanBenar String?
-  pembahasan   String?
+  opsiA        String?  @db.Text
+  opsiB        String?  @db.Text
+  opsiC        String?  @db.Text
+  opsiD        String?  @db.Text
+  opsiE        String?  @db.Text
+  jawabanBenar String?  @db.Text
+  pembahasan   String?  @db.Text
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

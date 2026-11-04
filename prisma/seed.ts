@@ -20,7 +20,7 @@ async function main() {
   const users = await Promise.all([
     prisma.user.upsert({
       where: { email: "admin@gmail.com" },
-      update: {},
+      update: { password, isActive: true },
       create: {
         name: "Muhammad Ridho Ganteng",
         email: "admin@gmail.com",
@@ -32,7 +32,7 @@ async function main() {
     }),
     prisma.user.upsert({
       where: { email: "budi.santosa@smansatu.sch.id" },
-      update: {},
+      update: { password, isActive: true },
       create: {
         name: "Budi Santosa",
         email: "budi.santosa@smansatu.sch.id",
@@ -45,7 +45,7 @@ async function main() {
     }),
     prisma.user.upsert({
       where: { email: "sari.indrawati@smandua.sch.id" },
-      update: {},
+      update: { password, isActive: true },
       create: {
         name: "Sari Indrawati",
         email: "sari.indrawati@smandua.sch.id",
@@ -58,7 +58,7 @@ async function main() {
     }),
     prisma.user.upsert({
       where: { email: "andi.prasetyo@smantiga.sch.id" },
-      update: {},
+      update: { password, isActive: true },
       create: {
         name: "Andi Prasetyo",
         email: "andi.prasetyo@smantiga.sch.id",
