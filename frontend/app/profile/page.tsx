@@ -14,6 +14,11 @@ import {
   CheckCircle2,
   XCircle,
   Camera,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { api, getToken } from "@/lib/api";
 import { useRouter } from "next/navigation";
@@ -29,6 +34,7 @@ type UserProfile = {
   avatarUrl?: string | null;
   lastLoginAt?: string | null;
   createdAt: string;
+  openrouterApiKeyLast4?: string | null;
 };
 
 function getInitials(name: string) {
@@ -85,6 +91,10 @@ export default function ProfilePage() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [openrouterApiKey, setOpenrouterApiKey] = useState("");
+  const [showOpenrouterApiKey, setShowOpenrouterApiKey] = useState(false);
+  const [savingOpenrouterApiKey, setSavingOpenrouterApiKey] = useState(false);
+  const [openrouterMessage, setOpenrouterMessage] = useState("");
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -116,6 +126,37 @@ export default function ProfilePage() {
   }
 
   if (!user) return null;
+
+  const saveOpenrouterApiKey = async () => {
+    if (!openrouterApiKey.trim()) return;
+
+    setSavingOpenrouterApiKey(true);
+    setOpenrouterMessage("");
+    try {
+      await api.patch("/profil", { openrouterApiKey });
+      setUser({ ...user, openrouterApiKeyLast4: openrouterApiKey.trim().slice(-4) });
+      setOpenrouterApiKey("");
+      setOpenrouterMessage("API key tersimpan dengan aman.");
+    } catch (error) {
+      setOpenrouterMessage(error instanceof Error ? error.message : "Gagal menyimpan API key.");
+    } finally {
+      setSavingOpenrouterApiKey(false);
+    }
+  };
+
+  const removeOpenrouterApiKey = async () => {
+    setSavingOpenrouterApiKey(true);
+    setOpenrouterMessage("");
+    try {
+      await api.patch("/profil", { removeOpenrouterApiKey: true });
+      setUser({ ...user, openrouterApiKeyLast4: null });
+      setOpenrouterMessage("API key telah dihapus.");
+    } catch (error) {
+      setOpenrouterMessage(error instanceof Error ? error.message : "Gagal menghapus API key.");
+    } finally {
+      setSavingOpenrouterApiKey(false);
+    }
+  };
 
   const roleConfig = {
     ADMIN: { label: "Administrator", cls: "bg-violet-100 text-violet-700 border-violet-200" },
@@ -236,6 +277,50 @@ export default function ProfilePage() {
                   label="Bergabung Sejak"
                   value={formatDate(user.createdAt)}
                 />
+              </div>
+            </div>
+
+            <div className="mt-5 bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-9 h-9 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center text-violet-600">
+                  <KeyRound size={16} />
+                </span>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900">OpenRouter API Key</h2>
+                  <p className="text-xs text-gray-500 mt-1">Dipakai khusus untuk fitur Import Soal AI. Key disimpan terenkripsi dan tidak ditampilkan kembali.</p>
+                </div>
+              </div>
+
+              <div className="mt-5">
+                {user.openrouterApiKeyLast4 ? (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+                    <span className="text-xs font-medium text-emerald-700">Tersimpan, berakhir dengan <code>...{user.openrouterApiKeyLast4}</code></span>
+                    <button type="button" onClick={removeOpenrouterApiKey} disabled={savingOpenrouterApiKey} className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700 disabled:opacity-50">
+                      <Trash2 size={13} /> Hapus
+                    </button>
+                  </div>
+                ) : (
+                  <p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">Belum ada API key. Import Soal AI belum dapat digunakan.</p>
+                )}
+
+                <div className="relative mt-3">
+                  <input
+                    type={showOpenrouterApiKey ? "text" : "password"}
+                    value={openrouterApiKey}
+                    onChange={(event) => setOpenrouterApiKey(event.target.value)}
+                    placeholder={user.openrouterApiKeyLast4 ? "Masukkan key baru untuk mengganti" : "sk-or-v1-..."}
+                    className="w-full rounded-xl border border-gray-200 py-2.5 pl-3 pr-10 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+                    autoComplete="off"
+                  />
+                  <button type="button" onClick={() => setShowOpenrouterApiKey(!showOpenrouterApiKey)} className="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-gray-600" aria-label="Tampilkan atau sembunyikan API key">
+                    {showOpenrouterApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <button type="button" onClick={saveOpenrouterApiKey} disabled={savingOpenrouterApiKey || !openrouterApiKey.trim()} className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  {savingOpenrouterApiKey && <Loader2 size={15} className="animate-spin" />}
+                  {user.openrouterApiKeyLast4 ? "Ganti API Key" : "Simpan API Key"}
+                </button>
+                {openrouterMessage && <p className="mt-3 text-xs text-gray-600" role="status">{openrouterMessage}</p>}
               </div>
             </div>
           </div>

@@ -5820,7 +5820,7 @@
 
 // // // ─── OpenRouter config ────────────────────────────────────────────────────────
 // // // SESUDAH
-// // const OPENROUTER_API_KEY = process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || "";
+// // API key OpenRouter sekarang diproses aman oleh backend.
 // // // Gunakan model 120b free sesuai permintaan
 // // const OPENROUTER_MODEL = "openai/gpt-oss-120b:free";
 
@@ -6072,7 +6072,7 @@
 
 // // Keluarkan HANYA array JSON. Mulai dengan [ dan akhiri dengan ].`;
 
-// //   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+// //   const response = await api.post("/ai/parse-soal", {
 // //     method: "POST",
 // //     headers: {
 // //       "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
@@ -8795,7 +8795,7 @@
 //   ujian: "Ujian", ulangan: "Ulangan", latihan: "Latihan", kuis: "Kuis", soal: "Bank Soal",
 // };
 
-// const OPENROUTER_API_KEY = process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || "";
+// API key OpenRouter sekarang diproses aman oleh backend.
 // const OPENROUTER_MODEL = "openai/gpt-oss-120b:free";
 // const DEFAULT_OPSI = ["", "", "", "", ""];
 // const DRAFT_KEY = (tab: string) => `guru_add_content_draft_${tab}`;
@@ -8973,7 +8973,7 @@
 // ===SOAL===\n${text}\n===AKHIR SOAL===
 // Keluarkan HANYA array JSON.`;
 
-//   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+//   const response = await api.post("/ai/parse-soal", {
 //     method: "POST",
 //     headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
 //     body: JSON.stringify({ model: OPENROUTER_MODEL, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }], temperature: 0, max_tokens: 12000 }),
@@ -10649,6 +10649,7 @@
 
 
 "use client";
+import { exportHasilUjianToExcel } from "@/lib/export-hasil-ujian";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -10693,6 +10694,13 @@ type HasilUjian = {
   ujian: { id: string; nama: string; durasi: string; totalSoal: number; kelas: string };
   summary: { rataRata: number; tertinggi: number; terendah: number; lulus: number; gagal: number; totalSiswa: number };
   siswa: HasilSiswa[];
+  analisisSoal: {
+    totalPeserta: number;
+    data: {
+      nomorSoal: number; jumlahBenar: number; jumlahSalah: number;
+      kesukaran: number; kategori: string; reliabilitas: number | null;
+    }[];
+  };
 };
 
 // ─── Color System ─────────────────────────────────────────────────
@@ -10712,13 +10720,6 @@ const TAB_LABELS: Record<string, string> = {
   kuis: "Kuis", soal: "Bank Soal", nilai: "Nilai Akhir",
 };
 
-// ─── OpenRouter config ────────────────────────────────────────────
-const OPENROUTER_API_KEY = process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || "";
-// Model vision untuk PDF dengan gambar
-const VISION_MODEL = "google/gemini-2.0-flash-001";
-// Model teks untuk DOCX/TXT
-const TEXT_MODEL = "openai/gpt-4o-mini";
-
 // ─── Draft helpers ────────────────────────────────────────────────
 const DRAFT_KEY = (tab: string) => `admin_add_content_draft_${tab}`;
 interface DraftData {
@@ -10735,20 +10736,6 @@ function loadDraft(tab: string): DraftData | null {
 }
 function clearDraft(tab: string) {
   try { sessionStorage.removeItem(DRAFT_KEY(tab)); } catch (_) {}
-}
-
-// ─── Export CSV ───────────────────────────────────────────────────
-function exportToExcel(data: HasilUjian, ujianNama: string) {
-  const header = ["No","NISN","Nama","Kelas","Nilai","Benar","Salah","Status","Pelanggaran"];
-  const rows = data.siswa.map((s, i) => [i+1,s.nisn,s.nama,s.kelas,s.nilai,s.benar,s.salah,s.lulus?"LULUS":"TIDAK LULUS",s.pelanggaran]);
-  const summaryRows = [[],["RINGKASAN"],["Total Peserta",data.summary.totalSiswa],["Rata-rata Nilai",data.summary.rataRata],["Nilai Tertinggi",data.summary.tertinggi],["Nilai Terendah",data.summary.terendah],["Lulus",data.summary.lulus],["Tidak Lulus",data.summary.gagal]];
-  const allRows = [header,...rows,...summaryRows];
-  const csvContent = allRows.map(row=>row.map(cell=>`"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob = new Blob(["\uFEFF"+csvContent],{type:"text/csv;charset=utf-8;"});
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href=url; link.download=`Hasil_${ujianNama.replace(/[^a-zA-Z0-9]/g,"_")}_${new Date().toISOString().split("T")[0]}.csv`;
-  document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -10835,7 +10822,6 @@ async function uploadBase64ToCloudinary(base64: string, jwtToken: string, apiUrl
 // ─── Parse PDF dengan Vision AI (teks + gambar sekaligus) ─────────
 async function parsePdfWithVision(
   file: File,
-  openrouterApiKey: string,
   backendApiUrl: string,
   jwtToken: string,
   onProgress: (msg: string) => void
@@ -10858,76 +10844,13 @@ async function parsePdfWithVision(
     pageImages.push(b64);
   }
 
-  // 4. Kirim semua halaman ke AI Vision
+  // 4. Kirim semua halaman ke endpoint backend; API key pengguna tidak pernah ke browser.
   onProgress("AI Vision sedang membaca soal dan mendeteksi gambar...");
 
-  const systemPrompt = `Kamu adalah parser soal ujian profesional dengan kemampuan vision.
-Tugas: baca gambar halaman PDF soal ujian, ekstrak SEMUA soal beserta info gambar.
-
-Aturan WAJIB:
-1. Output HANYA array JSON mentah. TIDAK ada markdown, TIDAK ada backtick.
-2. Ekstrak SEMUA soal dari semua halaman — jangan terlewat.
-3. Field "jawaban" berisi HURUF KAPITAL: "A", "B", "C", "D", atau "E".
-4. Field "hasGambar": true jika ada gambar/foto/ilustrasi/diagram yang menempel pada soal tersebut. false jika tidak ada.
-5. Field "gambarPageIndex": indeks halaman (0-based) tempat gambar berada. -1 jika tidak ada.
-6. Field "gambarBoundingBox": koordinat gambar dalam persen (0-100) relatif terhadap halaman:
-   - x: posisi kiri gambar (%)
-   - y: posisi atas gambar (%)
-   - w: lebar gambar (%)
-   - h: tinggi gambar (%)
-   null jika tidak ada gambar.
-7. Opsi bisa A-E.
-
-Format JSON setiap soal:
-{
-  "no": <integer>,
-  "pertanyaan": "<teks soal bersih>",
-  "tipe": "pg",
-  "opsi": ["<A>","<B>","<C>","<D>","<E>"],
-  "jawaban": "<A|B|C|D|E>",
-  "topik": "",
-  "hasGambar": <true|false>,
-  "gambarPageIndex": <integer|-1>,
-  "gambarBoundingBox": {"x":<0-100>,"y":<0-100>,"w":<0-100>,"h":<0-100>} | null
-}
-
-Keluarkan HANYA array JSON. Mulai [ akhiri ].`;
-
-  const contentParts: any[] = [
-    { type: "text", text: `Berikut ${pageImages.length} halaman PDF soal ujian. Ekstrak SEMUA soal beserta info gambar:` }
-  ];
-  pageImages.forEach((b64, idx) => {
-    contentParts.push({ type: "text", text: `--- HALAMAN ${idx + 1} (index ${idx}) ---` });
-    contentParts.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${b64}`, detail: "high" } });
+  const { questions: parsed } = await api.post<{ questions: any[] }>("/ai/parse-soal", {
+    type: "vision",
+    images: pageImages,
   });
-  contentParts.push({ type: "text", text: "Keluarkan HANYA array JSON. Mulai [ akhiri ]." });
-
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${openrouterApiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: VISION_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: contentParts },
-      ],
-      temperature: 0,
-      max_tokens: 16000,
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`OpenRouter Vision error: ${err}`);
-  }
-
-  const aiData = await response.json();
-  let content = aiData.choices?.[0]?.message?.content?.trim() || "[]";
-  content = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
-  const match = content.match(/(\[[\s\S]*\])/);
-  if (match) content = match[1];
-
-  const parsed: any[] = JSON.parse(content);
 
   // 5. Untuk soal yang punya gambar → crop → upload Cloudinary
   const soalItems: SoalItem[] = [];
@@ -10961,7 +10884,7 @@ Keluarkan HANYA array JSON. Mulai [ akhiri ].`;
       pertanyaan: q.pertanyaan || "",
       tipe: q.tipe === "essay" ? "essay" : "pg",
       opsi: Array.isArray(q.opsi) ? q.opsi.filter(Boolean) : [],
-      jawaban: q.jawaban?.trim().toUpperCase() || "",
+      jawaban: q.tipe === "essay" ? q.jawaban?.trim() || "" : q.jawaban?.trim().toUpperCase() || "",
       topik: q.topik || "",
       gambar: gambarUrl,
     });
@@ -11007,58 +10930,16 @@ async function readTxtAsText(file: File): Promise<string> {
 
 // ─── Parse soal dari teks (DOCX/TXT) dengan AI teks ──────────────
 async function parseQuestionsWithAI(text: string): Promise<SoalItem[]> {
-  const systemPrompt = `Kamu adalah parser soal ujian profesional yang sangat teliti.
-Tugasmu adalah mengonversi SETIAP soal pilihan ganda dalam teks ke format JSON.
-
-Aturan WAJIB:
-1. Output HANYA array JSON mentah. TIDAK ada markdown, TIDAK ada backtick json.
-2. Konversi SEMUA soal yang ada — jangan ada yang terlewat.
-3. Field "jawaban" WAJIB berisi HURUF opsi yang benar: "A", "B", "C", "D", atau "E".
-4. Opsi bisa sampai 5 (A, B, C, D, E).
-5. Hapus teks duplikat/repetisi dari pertanyaan dan opsi.`;
-
-  const userPrompt = `Konversi SEMUA soal berikut ke dalam JSON array.
-
-Format setiap elemen JSON:
-{
-  "no": <nomor soal integer>,
-  "pertanyaan": "<teks soal bersih>",
-  "tipe": "pg",
-  "opsi": ["<A>","<B>","<C>","<D>","<E>"],
-  "jawaban": "<HURUF: A|B|C|D|E>",
-  "topik": ""
-}
-
-===SOAL===
-${text}
-===AKHIR SOAL===
-
-Keluarkan HANYA array JSON. Mulai dengan [ dan akhiri dengan ].`;
-
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: TEXT_MODEL,
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      temperature: 0,
-      max_tokens: 12000,
-    }),
+  const { questions: parsed } = await api.post<{ questions: any[] }>("/ai/parse-soal", {
+    type: "text",
+    text,
   });
-
-  if (!response.ok) { const err = await response.text(); throw new Error(`OpenRouter error: ${err}`); }
-  const data = await response.json();
-  let content = data.choices?.[0]?.message?.content?.trim() || "[]";
-  content = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
-  const match = content.match(/(\[[\s\S]*\])/);
-  if (match) content = match[1];
-  const parsed: any[] = JSON.parse(content);
   return parsed.map((q, i) => ({
     id: `import_${Date.now()}_${i}`,
     pertanyaan: q.pertanyaan || q.question || "",
     tipe: (q.tipe === "essay" ? "essay" : "pg") as "pg" | "essay",
     opsi: Array.isArray(q.opsi) ? q.opsi.filter(Boolean) : [],
-    jawaban: q.jawaban?.trim().toUpperCase() || "",
+    jawaban: q.tipe === "essay" ? q.jawaban?.trim() || "" : q.jawaban?.trim().toUpperCase() || "",
     topik: q.topik || "",
   }));
 }
@@ -11099,7 +10980,6 @@ function ImportSoalModal({ onClose, onImport }: { onClose: () => void; onImport:
         // ── PDF: Vision AI — baca teks + deteksi gambar sekaligus ──
         soalList = await parsePdfWithVision(
           file,
-          OPENROUTER_API_KEY,
           process.env.NEXT_PUBLIC_API_URL || "",
           getToken() || "",
           (msg) => { setProgress(msg); }
@@ -11503,7 +11383,7 @@ function HasilUjianModal({ ujian, onClose }: { ujian: Ujian; onClose: () => void
   }
   function toggleSort(key: string) { if (sort===key) setDir(d=>d==="asc"?"desc":"asc"); else { setSort(key); setDir("asc"); } }
   const SortIcon = ({ col }: { col: string }) => <span className={`ml-0.5 text-[9px] ${sort===col?"text-zinc-900":"text-slate-300"}`}>{sort===col?(dir==="asc"?"↑":"↓"):"↕"}</span>;
-  function handleExport() { if (!data || !recomputedSummary) return; exportToExcel({...data, siswa: siswaWithKkm, summary: recomputedSummary}, ujian.nama); }
+  async function handleExport() { if (!data || !recomputedSummary) return; await exportHasilUjianToExcel({...data, siswa: siswaWithKkm, summary: recomputedSummary}, ujian.nama); }
 
   return (
     <div className="fixed inset-0 z-[250] flex items-end sm:items-center justify-center">
@@ -12091,8 +11971,6 @@ export default function AdminMataPelajaranPage() {
   const [error, setError] = useState("");
   const [subjects, setSubjects] = useState<MataPelajaran[]>([]);
   const [stats, setStats] = useState({ totalSoal: 0, totalUjian: 0 });
-  const [searchQuery, setSearchQuery] = useState("");
-  const [kelasFilter, setKelasFilter] = useState("all");
   const [selectedSubject, setSelectedSubject] = useState<MataPelajaran|null>(null);
   const [activeTab, setActiveTab] = useState("ujian");
   const [ujianList, setUjianList] = useState<Ujian[]>([]);
@@ -12121,6 +11999,7 @@ export default function AdminMataPelajaranPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
   const [showToken, setShowToken] = useState(false);
+  const [showSoalPreview, setShowSoalPreview] = useState(false);
   const [bobotUjian, setBobotUjian] = useState(40);
   const [bobotUlangan, setBobotUlangan] = useState(25);
   const [bobotLatihan, setBobotLatihan] = useState(20);
@@ -12136,11 +12015,11 @@ export default function AdminMataPelajaranPage() {
     const token = getToken();
     if (!token) { router.push("/auth/login"); return; }
     try {
-      const res = await api.get<{data:MataPelajaran[];stats:any}>(`/mata-pelajaran?kelas=${kelasFilter!=="all"?kelasFilter:""}`);
+      const res = await api.get<{data:MataPelajaran[];stats:any}>("/mata-pelajaran");
       setSubjects(res.data||[]); if (res.stats) setStats(res.stats);
     } catch(err) { setError(err instanceof Error?err.message:"Gagal memuat data"); }
     finally { setLoading(false); }
-  }, [kelasFilter, router]);
+  }, [router]);
   useEffect(()=>{fetchSubjects();},[fetchSubjects]);
 
   const fetchUjianByTipe = useCallback(async (mapelId: number, tipe: string) => {
@@ -12168,7 +12047,7 @@ export default function AdminMataPelajaranPage() {
   }, []);
   useEffect(()=>{if(selectedSubject&&activeTab==="soal")fetchSoalBank(selectedSubject.id,soalBankSearch,soalBankTipe);},[selectedSubject,activeTab,soalBankSearch,soalBankTipe,fetchSoalBank]);
 
-  const filtered = subjects.filter(s=>!searchQuery||s.nama.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filtered = subjects;
 
   async function handleAdd() {
     try { await api.post("/mata-pelajaran", addForm); setShowAddModal(false); setAddForm({nama:"",kelas:"",deskripsi:"",warna:"zinc"}); fetchSubjects(); }
@@ -12333,7 +12212,7 @@ export default function AdminMataPelajaranPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={()=>{setSelectedUjian(item);setShowToken(false);setCopiedLink(false);setCopiedToken(false);setShowDetailModal(true);}} className="h-7 px-2.5 border border-slate-200 rounded-lg text-[10px] font-semibold hover:bg-slate-50 transition-colors">Detail</button>
+                          <button onClick={()=>{setSelectedUjian(item);setShowToken(false);setShowSoalPreview(false);setCopiedLink(false);setCopiedToken(false);setShowDetailModal(true);}} className="h-7 px-2.5 border border-slate-200 rounded-lg text-[10px] font-semibold hover:bg-slate-50 transition-colors">Detail</button>
                           <button onClick={()=>{setHasilUjianTarget(item);setShowHasilModal(true);}} className="h-7 px-2.5 border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-semibold hover:bg-emerald-100 transition-colors">Hasil</button>
                           <button onClick={()=>{setTargetUjian(item);setShowEditUjianModal(true);}} className="h-7 w-7 flex items-center justify-center border border-slate-200 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200 transition-colors"><Pencil className="w-3.5 h-3.5"/></button>
                           <button onClick={()=>{setTargetUjian(item);setShowDeleteUjianModal(true);}} className="h-7 w-7 flex items-center justify-center border border-slate-200 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200 transition-colors"><Trash2 className="w-3.5 h-3.5"/></button>
@@ -12485,19 +12364,6 @@ export default function AdminMataPelajaranPage() {
                     <div><p className="text-lg md:text-xl font-bold text-zinc-900">{s.val}</p><p className="text-[10px] md:text-[11px] text-slate-400 font-medium">{s.label}</p></div>
                   </div>
                 ))}
-              </div>
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-                <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-                  <div className="flex gap-2 flex-wrap">
-                    {["all","X","XI","XII"].map(k=>(
-                      <button key={k} onClick={()=>setKelasFilter(k)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${kelasFilter===k?"bg-zinc-900 text-white":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{k==="all"?"Semua":k}</button>
-                    ))}
-                  </div>
-                  <div className="relative flex-1 max-w-xs">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"/>
-                    <input type="text" placeholder="Cari mata pelajaran..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10"/>
-                  </div>
-                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filtered.map(subject=>{
@@ -12728,6 +12594,29 @@ export default function AdminMataPelajaranPage() {
                   ))}
                 </div>
               </div>
+              <div className="border border-emerald-100 rounded-xl overflow-hidden">
+                <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
+                  <div><p className="text-[11px] font-bold text-emerald-700">Preview Soal & Kunci Jawaban</p><p className="text-[10px] text-emerald-600 mt-0.5">Tampilan khusus guru, kunci tidak terlihat oleh siswa.</p></div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-emerald-700">{selectedUjian.soalList?.length??0} soal</span>
+                    <button type="button" onClick={()=>setShowSoalPreview(show=>!show)} aria-expanded={showSoalPreview} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2 py-1 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100">
+                      {showSoalPreview?<EyeOff className="w-3 h-3"/>:<Eye className="w-3 h-3"/>}{showSoalPreview?"Hide":"Tampilkan"}
+                    </button>
+                  </div>
+                </div>
+                {showSoalPreview&&!selectedUjian.soalList?.length ? <p className="p-4 text-[12px] text-slate-400 text-center">Belum ada soal pada ujian ini.</p> : showSoalPreview ? (
+                  <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100">
+                    {selectedUjian.soalList?.map((soal,index)=>(
+                      <article key={soal.id} className="p-4 space-y-3">
+                        <div className="flex items-start gap-2"><span className="w-6 h-6 rounded-full bg-zinc-900 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">{index+1}</span><div className="min-w-0 flex-1"><p className="text-[13px] font-medium text-zinc-900 leading-relaxed">{soal.pertanyaan}</p>{soal.topik&&<p className="mt-1 text-[10px] text-slate-400">{soal.topik}</p>}</div></div>
+                        {soal.gambar&&<img src={soal.gambar} alt={`Gambar soal ${index+1}`} className="max-h-48 rounded-lg border border-slate-200 object-contain"/>}
+                        {soal.tipe==="pg"&&<div className="grid gap-1.5 sm:grid-cols-2">{soal.opsi.map((opsi,opsiIndex)=>{const label=String.fromCharCode(65+opsiIndex);const isCorrect=soal.jawaban===label;return <div key={`${label}-${opsi}`} className={`rounded-lg border px-2.5 py-2 text-[11px] ${isCorrect?"border-emerald-300 bg-emerald-50 text-emerald-800 font-semibold":"border-slate-100 bg-slate-50 text-slate-600"}`}><strong>{label}.</strong> {opsi}</div>;})}</div>}
+                        <p className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700"><CheckCircle className="w-3.5 h-3.5"/>Kunci jawaban: {soal.jawaban||"Belum diisi"}</p>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
                 <div className="flex items-center gap-2 mb-2"><ExternalLink className="w-3.5 h-3.5 text-blue-500"/><p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Link Akses Siswa</p></div>
                 <div className="flex items-center gap-2">
@@ -12765,12 +12654,3 @@ export default function AdminMataPelajaranPage() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
