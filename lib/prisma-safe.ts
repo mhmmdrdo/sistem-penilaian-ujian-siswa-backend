@@ -1,4 +1,4 @@
-import { prisma } from "@/prisma/client";
+import { prisma } from "@/lib/prisma";
 import { PrismaClient } from "@prisma/client";
 
 // Wrapper yang otomatis retry jika koneksi terputus (P1017)
