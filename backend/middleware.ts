@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  const origin = request.headers.get("origin") ?? "http://localhost:3000";
+  // const origin = request.headers.get("origin") ?? "http://localhost:3000";
+
+  const origin = request.headers.get("origin") ?? "https://sistem-penilaian-ujian-siswa-backen-phi.vercel.app/";
 
   // Handle preflight OPTIONS
   if (request.method === "OPTIONS") {
