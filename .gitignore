@@ -7,6 +7,15 @@ node_modules/
 .env.*.local
 
 # ======================
+# PROJECT-SCOPED CONTENT
+# ======================
+# This repository contains backend code only. Keep the separately maintained
+# frontend and project design files out of the backend repository.
+frontend/
+prd/
+uiux/
+
+# ======================
 # FRONTEND (Next.js)
 # ======================
 frontend/node_modules/

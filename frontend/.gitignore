@@ -1,4 +1,0 @@
-# Buka .gitignore dan pastikan ada baris ini:
-node_modules/
-.next/
-.env.local
