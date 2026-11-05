@@ -228,6 +228,7 @@ export async function GET(req: NextRequest, { params }: { params: { mapelId: str
       durasi: u.durasi,
       kelas: u.kelas,
       tanggalMulai: u.tanggalMulai,
+      createdAt: u.createdAt,
       acakSoal: u.acakSoal,
       totalSoal: u.soalUjian.length,
       peserta: `${u.sesiSiswa.length}/${u._count.sesiSiswa}`,

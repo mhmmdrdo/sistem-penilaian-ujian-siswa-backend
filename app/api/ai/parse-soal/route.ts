@@ -66,6 +66,51 @@ function parseResponse(content: unknown) {
   return parsed;
 }
 
+// Model terkadang mengembalikan label opsi sebagai bagian dari isi teks,
+// misalnya "A. 0,82". Label tersebut dirender oleh frontend, jadi harus
+// dibuang agar tidak tampil menjadi "A. A. 0,82".
+function normalizeOptionText(value: unknown): string {
+  if (typeof value !== "string") return "";
+
+  let normalized = value.trim();
+  let previous = "";
+  while (normalized !== previous) {
+    previous = normalized;
+    normalized = normalized
+      .replace(/^\s*[\[\(]?[A-E][\]\)]?\s*[.:)\-]\s*/i, "")
+      .trim();
+  }
+  return normalized;
+}
+
+function normalizeQuestion(question: unknown) {
+  if (!question || typeof question !== "object") return question;
+
+  const item = question as Record<string, unknown>;
+  const options = Array.isArray(item.opsi)
+    ? item.opsi.map(normalizeOptionText).filter(Boolean)
+    : [];
+  const rawAnswer = typeof item.jawaban === "string" ? item.jawaban.trim() : "";
+  const answerMatch = rawAnswer.match(/^\s*[\[\(]?([A-E])[\]\)]?(?:\s*[.:)\-]|\s*$)/i);
+  const answer = answerMatch
+    ? answerMatch[1].toUpperCase()
+    : (() => {
+        const normalizedAnswer = normalizeOptionText(rawAnswer).toLowerCase();
+        const optionIndex = options.findIndex((option) => option.toLowerCase() === normalizedAnswer);
+        return optionIndex >= 0 ? String.fromCharCode(65 + optionIndex) : rawAnswer;
+      })();
+
+  return {
+    ...item,
+    opsi: options,
+    jawaban: answer,
+  };
+}
+
+function normalizeQuestions(questions: unknown[]) {
+  return questions.map(normalizeQuestion);
+}
+
 function extractMultipleChoiceAnswerKey(text: string): string[] {
   const answerKeySection = text.match(
     /A\.\s*Kunci\s+Jawaban\s+Pilihan\s+Ganda\s+([\s\S]*?)(?=\s+B\.\s*Kunci\s+Jawaban(?:\s+dan\s+Pembahasan)?(?:\s+Uraian)?\b)/i
@@ -181,7 +226,8 @@ export async function POST(req: NextRequest) {
 
     const result = await response.json();
     const questions = parseResponse(result.choices?.[0]?.message?.content);
-    const normalizedQuestions = sourceText ? applyAnswerKey(questions, sourceText) : questions;
+    const withAnswerKey = sourceText ? applyAnswerKey(questions, sourceText) : questions;
+    const normalizedQuestions = normalizeQuestions(withAnswerKey);
     return NextResponse.json({
       questions: normalizedQuestions,
     });
